@@ -1,3 +1,4 @@
+import os
 import torch
 
 from torch import nn, optim
@@ -26,10 +27,15 @@ def train_epoch(model, optimizer, train_loader, device):
         captions = captions.to(device)
 
         # Compute predictions and loss
-        outputs = model(images, captions)
+        outputs = model(images, captions)[:, 1:, :]
+
+        # Reshape data in format used by criterion
+        outputs = outputs.reshape(outputs.shape[0] * outputs.shape[1], outputs.shape[2])
+        captions = captions.view(captions.shape[0] * captions.shape[1])
+
 
         # First position comes from concatenating features with embeddings
-        loss = criterion(outputs[:, 1:], captions)
+        loss = criterion(outputs, captions)
         running_loss += loss.item()
 
         # Handle backpropagation
@@ -50,13 +56,18 @@ def evaluate_model(model, dataloader, device):
 
     with torch.no_grad():
         # Evaluate all batches of dataloader
-        for images, captions in dataloader:
+        for images, captions in tqdm(dataloader, unit='batch', desc='Evaluating'):
             # Move data to device
             images = images.to(device)
             captions = captions.to(device)
 
             # Compute predictions and loss
-            outputs = model(images)
+            outputs = model(images, captions)[:, 1:, :]
+
+            # Reshape data in format used by criterion
+            outputs = outputs.reshape(outputs.shape[0] * outputs.shape[1], outputs.shape[2])
+            captions = captions.view(captions.shape[0] * captions.shape[1])
+
             loss = criterion(outputs, captions)
             running_loss += loss.item()
 
@@ -67,8 +78,14 @@ def evaluate_model(model, dataloader, device):
 def train_model(model, train_loader, val_loader, device, num_epochs=5):
     optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
+    os.makedirs('model_checkpoints', exist_ok=True)
+
     for epoch in range(num_epochs):
         train_loss = train_epoch(model, optimizer, train_loader, device)
+
+        # Save checkpoint after epoch model
+        torch.save(model.state_dict(), f"model_checkpoints/checkpoint_epoch_{epoch+1}.pt")
+
         val_loss = evaluate_model(model, val_loader, device)
 
         print(f"Epoch {epoch+1} | train_loss: {train_loss} | val_loss: {val_loss}")
@@ -81,12 +98,15 @@ def main():
     word2vec, caption_length = getWord2VecEmbeddings()
     train_loader, val_loader = getTrainLoaders(word2vec, caption_length)
 
-    model = ImageCaptioningNetwork(embedding_dim=256,
+    model = ImageCaptioningNetwork(embedding_dim=128,
                                    num_embeddings=len(word2vec.wv.key_to_index),
-                                   hidden_size=256).to(device)
+                                   hidden_size=128).to(device)
 
 
     train_model(model, train_loader, val_loader, device)
+
+    # Save trained model
+    torch.save(model.state_dict(), f"image_captioning_model.pt")
 
 
 
