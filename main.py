@@ -27,7 +27,9 @@ def train_epoch(model, optimizer, train_loader, device):
 
         # Compute predictions and loss
         outputs = model(images, captions)
-        loss = criterion(outputs, captions)
+
+        # First position comes from concatenating features with embeddings
+        loss = criterion(outputs[:, 1:], captions)
         running_loss += loss.item()
 
         # Handle backpropagation
@@ -48,14 +50,14 @@ def evaluate_model(model, dataloader, device):
 
     with torch.no_grad():
         # Evaluate all batches of dataloader
-        for images, labels in dataloader:
+        for images, captions in dataloader:
             # Move data to device
             images = images.to(device)
-            labels = labels.to(device)
+            captions = captions.to(device)
 
             # Compute predictions and loss
             outputs = model(images)
-            loss = criterion(outputs, labels)
+            loss = criterion(outputs, captions)
             running_loss += loss.item()
 
 
@@ -79,8 +81,8 @@ def main():
     word2vec, caption_length = getWord2VecEmbeddings()
     train_loader, val_loader = getTrainLoaders(word2vec, caption_length)
 
-    model = ImageCaptioningNetwork(embedding_dim=50,
-                                   num_embeddings=len(vectorizer.vocabulary_),
+    model = ImageCaptioningNetwork(embedding_dim=256,
+                                   num_embeddings=len(word2vec.wv.key_to_index),
                                    hidden_size=256).to(device)
 
 
