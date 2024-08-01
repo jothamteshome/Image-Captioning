@@ -59,7 +59,7 @@ class CocoCaptionDataset(Dataset):
             annotations = self.coco.coco.imgToAnns[img_id]
 
             for annotation in annotations:
-                self.examples.append((img_id, self.processAnnotation(annotation)))
+                self.examples.append((img_id, self.encodeAnnotation(annotation)))
         
         
 
@@ -91,7 +91,7 @@ class CocoCaptionDataset(Dataset):
             tensor: Tensor containing ids of tokens in caption
         
         """
-        img_id, caption = self.examples[id]
+        img_id, encoded_caption = self.examples[id]
 
         # Load the image at the current id
         path = self.coco.coco.loadImgs(img_id)[0]['file_name']
@@ -101,10 +101,10 @@ class CocoCaptionDataset(Dataset):
         # Apply ResNet50 transform to image
         image = self.transform(image)
 
-        return image, caption
+        return image, encoded_caption
     
 
-    def processAnnotation(self, annotation: dict) -> tensor:
+    def encodeAnnotation(self, annotation: dict) -> tensor:
         """
         
         Processes a single annotation by tokenizing the caption and
@@ -120,31 +120,29 @@ class CocoCaptionDataset(Dataset):
         
         """
         # Convert caption to lower case then tokenize
-        tokenized_caption = nltk.word_tokenize(annotation['caption'].lower())
+        tokenized_caption = ["<start>"] + nltk.word_tokenize(annotation['caption'].lower()) + ["<end>"]
+
+
+        # Pad captions shorter than longest caption
+        if len(tokenized_caption) < self.caption_length:
+            tokenized_caption.extend(["<pad>"] * (self.caption_length - len(tokenized_caption)))
+
 
         # Word2Vec key to index dictionary
         key2idx = self.word2vec.wv.key_to_index
 
-        # IDs of special tokens
-        start_idx, end_idx = key2idx.get("<start>"), key2idx.get("<end>")
-        pad_idx, unk_idx = key2idx.get("<pad>"), key2idx.get("<unk>")
+        # Id of special "<unk>" token for out-of-vocabulary tokens
+        unk_idx = key2idx.get("<unk>")
 
         # Begin each caption with start_idx
-        embedded_sentence = [start_idx]
+        encoded_caption = []
 
         # Loop through tokens in caption and assign their index
         for token in tokenized_caption:
-            # Add index of word if it exists, otherwise add "<UNK>" value
-            embedded_sentence.append(key2idx.get(token, unk_idx))
+            # Add index of word if it exists, otherwise add "<unk>" value
+            encoded_caption.append(key2idx.get(token, unk_idx))
 
-        # Add end_idx to mark end of caption
-        embedded_sentence.append(end_idx)
-
-        # Pad captions shorter than longest caption
-        if len(embedded_sentence) < self.caption_length:
-            embedded_sentence.extend([pad_idx] * (self.caption_length - len(embedded_sentence)))
-
-        return tensor(embedded_sentence)
+        return tensor(encoded_caption)
     
 
 
@@ -196,12 +194,12 @@ class ValCocoCaptionDataset(CocoCaptionDataset):
             img_id = self.coco.ids[id]
             annotations = self.coco.coco.imgToAnns[img_id]
 
-            processed_captions = []
+            encoded_captions = []
 
             for annotation in annotations:
-                processed_captions.append(self.processAnnotation(annotation))
+                encoded_captions.append(self.encodeAnnotation(annotation))
 
-            self.examples.append({'img_id': img_id, 'captions': processed_captions})
+            self.examples.append({'img_id': img_id, 'captions': encoded_captions})
 
 
     def __getitem__(self, id: int) -> tuple[tensor, tensor]:
