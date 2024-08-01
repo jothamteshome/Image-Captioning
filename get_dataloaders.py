@@ -3,7 +3,7 @@ import numpy as np
 
 from gensim.models import Word2Vec
 from PIL import Image
-from torch import tensor
+from torch import tensor, vstack
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import CocoCaptions
 from torchvision.transforms import Compose, CenterCrop, Normalize, Resize, ToTensor
@@ -145,6 +145,91 @@ class CocoCaptionDataset(Dataset):
             embedded_sentence.extend([pad_idx] * (self.caption_length - len(embedded_sentence)))
 
         return tensor(embedded_sentence)
+    
+
+
+class ValCocoCaptionDataset(CocoCaptionDataset):
+    """
+    
+    Custom ValCocoCaptionDataset that tokenizes each caption and creates
+    image-caption_dict pairs for each image in the dataset
+
+
+    Attributes:
+        coco (CocoCaptions):                        CocoCaptions dataset from torchvision
+        word2vec (Word2Vec):                        The trained Word2Vec model
+        caption_length (int):                       Length of the largest caption in dataset
+        transform (Compose):                        List of transforms to apply to an image
+        root (str):                                 Path to root directory images are stored in
+        examples (list[dict[str, int|list]]):       List containing image-caption pairs
+
+    """
+
+    def __init__(self, root: str, annFile: str, transform: Compose, 
+                 word2vec: Word2Vec, caption_length: int) -> None:
+        """
+        
+        Constructor for ValCocoCaptionDataset
+
+        
+        Parameters:
+            root (str):                     Path to root directory images are stored in
+            annFile (str):                  Path to annotation file describing images
+            transform (Compose):            List of transforms to apply to an image
+            word2vec (Word2Vec):            The trained Word2Vec model
+            caption_length (int):           Length of the largest caption in dataset
+        
+        """
+        super(CocoCaptionDataset, self).__init__()
+
+        # Load CocoCaptions Dataset from torchvision
+        self.coco = CocoCaptions(root=root, annFile=annFile, transform=transform)
+
+        self.word2vec = word2vec
+        self.caption_length = caption_length
+        self.transform = transform
+        self.root = root
+        self.examples = []
+
+        # Loop through ids in dataset
+        for id in range(len(self.coco)):
+            img_id = self.coco.ids[id]
+            annotations = self.coco.coco.imgToAnns[img_id]
+
+            processed_captions = []
+
+            for annotation in annotations:
+                processed_captions.append(self.processAnnotation(annotation))
+
+            self.examples.append({'img_id': img_id, 'captions': processed_captions})
+
+
+    def __getitem__(self, id: int) -> tuple[tensor, tensor]:
+        """
+        
+        Gets the item located at the current id
+
+        
+        Parameters:
+            id (int):   Index of an element in the dataset
+
+
+        Returns:
+            tensor: Tensor containing processed image
+            tensor: Tensor containing ids of tokens in caption
+        
+        """
+        img_id, captions = self.examples[id].values()
+
+        # Load the image at the current id
+        path = self.coco.coco.loadImgs(img_id)[0]['file_name']
+        image = Image.open(f"{self.root}\\{path}").convert('RGB')
+
+
+        # Apply ResNet50 transform to image
+        image = self.transform(image)
+
+        return image, vstack(captions)
 
 
 def getTrainLoaders(word2vec: Word2Vec, caption_length: int) -> tuple[DataLoader, DataLoader]:
@@ -180,11 +265,11 @@ def getTrainLoaders(word2vec: Word2Vec, caption_length: int) -> tuple[DataLoader
                           caption_length=caption_length)
     
     # Valdiation CocoCaptions dataset
-    val_dataset = CocoCaptionDataset(root="coco/images",
-                          annFile="coco/annotations/captions_val2014.json",
-                          transform=resnet_transform,
-                          word2vec=word2vec,
-                          caption_length=caption_length)
+    val_dataset = ValCocoCaptionDataset(root="coco/images",
+                                        annFile="coco/annotations/captions_val2014.json",
+                                        transform=resnet_transform,
+                                        word2vec=word2vec,
+                                        caption_length=caption_length)
     
 
     # DataLoaders for both training and validation sets
