@@ -24,7 +24,7 @@ class CocoCaptionDataset(Dataset):
         caption_length (int):                       Length of the largest caption in dataset
         transform (Compose):                        List of transforms to apply to an image
         root (str):                                 Path to root directory images are stored in
-        examples: list[tuple[int, tensor]]:         List containing image-caption pairs
+        examples (list[tuple[int, tensor]]):        List containing image-caption pairs
 
     """
     def __init__(self, root: str, annFile: str, transform: Compose, 
@@ -112,7 +112,7 @@ class CocoCaptionDataset(Dataset):
 
 
         Parameters:
-            annotation (_Annotation): An annotation object containing information about image
+            annotation (dict): An annotation object containing information about image
 
 
         Returns:
