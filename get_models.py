@@ -172,7 +172,7 @@ class ImageCaptioningNetwork(nn.Module):
         return output
     
 
-def load_model(embedding_matrix: ndarray, trained_model_path: str = None) -> ImageCaptioningNetwork:
+def loadModel(embedding_matrix: ndarray, trained_model_path: str = None) -> ImageCaptioningNetwork:
     """
     
     Load a saved model's state dict if one is passed, otherwise load base model
