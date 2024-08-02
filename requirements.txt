@@ -1,9 +1,12 @@
 --extra-index-url https://download.pytorch.org/whl/cu118
 gensim
+ninja
+nltk
 numpy<2
 pillow
 pycocotools
 torch
 torchvision
 torchaudio
+torcheval
 tqdm
