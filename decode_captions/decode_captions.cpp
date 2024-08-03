@@ -4,8 +4,9 @@
 #include <iostream>
 
 #include <ATen/ATen.h>
-#include <torch/library.h>
 #include <torch/extension.h>
+#include <torch/library.h>
+
 
 namespace decode_captions {
 
@@ -40,11 +41,11 @@ std::string decodeCaption(const at::TensorAccessor<int64_t, 1>& accessor, const 
 }
 
 
-std::vector<std::string> decodeBatchedCaptions_cpu(const at::Tensor& encoded_captions, const std::vector<std::string>& idx2key) {
+std::vector<std::string> decodeBatchedCaptions_cpu(const at::Tensor& encoded_captions, const std::vector<std::string>& idx2key, const int64_t& max_token_length) {
     TORCH_CHECK(encoded_captions.dtype() == at::kLong, "Input tensor must have dtype Long");
     TORCH_CHECK(encoded_captions.device().type() == at::DeviceType::CPU, "Input tensor must be on CPU");
 
-    // std::cout << max_token_length << std::endl;
+    std::cout << "CPU" << std::endl;
 
     std::vector<std::string> captions;
 
@@ -58,10 +59,14 @@ std::vector<std::string> decodeBatchedCaptions_cpu(const at::Tensor& encoded_cap
 }
 
 
-PYBIND11_MODULE(decode_captions, m) {}
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}
 
 TORCH_LIBRARY(decode_captions, m) {
-    m.def("decodeBatchedCaptions", &decodeBatchedCaptions_cpu);
+    m.def("decodeBatchedCaptions(Tensor encoded_captions, vector<string> idx2key, int max_token_length) -> vector<string>");
+}
+
+TORCH_LIBRARY_IMPL(decode_captions, CPU, m) {
+    m.impl("decodeBatchedCaptions", &decodeBatchedCaptions_cpu);
 }
 
 }
