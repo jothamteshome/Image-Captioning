@@ -19,7 +19,7 @@ def evaluateEpoch(model: ImageCaptioningNetwork, dataloader: DataLoader, device:
 
     
     Returns:
-        float:      A float value representing the evaluation loss at the current training step
+        float:      A float value representing the evaluation loss at the current time step
 
     """
     # Initialize loss function
@@ -31,7 +31,7 @@ def evaluateEpoch(model: ImageCaptioningNetwork, dataloader: DataLoader, device:
 
 
     with torch.no_grad():
-        # Train on all batches of training dataloader
+        # Train on all batches of dataloader
         for images, captions in tqdm(dataloader, unit='batch', desc='Evaluating'):
 
             # Move data to device
@@ -44,7 +44,7 @@ def evaluateEpoch(model: ImageCaptioningNetwork, dataloader: DataLoader, device:
             # Compute model_predictions
             predictions, _ = model(images, inputs)
 
-            # Flatten inputs for computing loss
+            # Reshape inputs for computing loss
             predictions = predictions.view(predictions.size(0) * predictions.size(1), -1)
             targets = targets.contiguous().flatten()
 
