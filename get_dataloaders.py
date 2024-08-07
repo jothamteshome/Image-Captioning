@@ -146,10 +146,10 @@ class CocoCaptionDataset(Dataset):
     
 
 
-class ValCocoCaptionDataset(CocoCaptionDataset):
+class FinalEvalCocoCaptionDataset(CocoCaptionDataset):
     """
     
-    Custom ValCocoCaptionDataset that tokenizes each caption and creates
+    Custom FinalEvalCocoCaptionDataset that tokenizes each caption and creates
     image-caption_dict pairs for each image in the dataset
 
 
@@ -167,7 +167,7 @@ class ValCocoCaptionDataset(CocoCaptionDataset):
                  word2vec: Word2Vec, max_length: int) -> None:
         """
         
-        Constructor for ValCocoCaptionDataset
+        Constructor for FinalEvalCocoCaptionDataset
 
         
         Parameters:
@@ -239,7 +239,7 @@ def getTrainLoaders(word2vec: Word2Vec, max_length: int) -> tuple[DataLoader, Da
     
     Parameters:
         word2vec (Word2Vec):    The trained Word2Vec model
-        max_length (int):   Length of the longest caption in the dataset
+        max_length (int):       Length of the longest caption in the dataset
 
 
     Returns:
@@ -248,7 +248,52 @@ def getTrainLoaders(word2vec: Word2Vec, max_length: int) -> tuple[DataLoader, Da
     
     """
 
-    def val_collate_fn(batch):
+    # Transformation that ResNet50 model expects
+    resnet_transform = Compose([
+                        Resize(256),
+                        CenterCrop(224),
+                        ToTensor(),
+                        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                        ])
+    
+    # Training CocoCaptions dataset
+    train_dataset = CocoCaptionDataset(root="coco/images",
+                          annFile="coco/annotations/captions_train2014.json",
+                          transform=resnet_transform,
+                          word2vec=word2vec,
+                          max_length=max_length)
+    
+    # Valdiation CocoCaptions dataset
+    val_dataset = CocoCaptionDataset(root="coco/images",
+                                        annFile="coco/annotations/captions_val2014.json",
+                                        transform=resnet_transform,
+                                        word2vec=word2vec,
+                                        max_length=max_length)
+    
+
+    # DataLoaders for both training and validation sets
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True)
+    
+    return train_loader, val_loader
+
+
+def getFinalEvalLoader(word2vec: Word2Vec, max_length: int) -> DataLoader:
+    """
+    
+    Loads the final evaluation dataset
+
+    
+    Parameters:
+        word2vec (Word2Vec):    The trained Word2Vec model
+        max_length (int):       Length of the longest caption in the dataset
+
+
+    Returns:
+        DataLoader: DataLoader for final evaluation dataset
+    
+    """
+    def final_eval_collate_fn(batch):
         """
         
         Handles the collation for a batch of data in the validation DataLoader
@@ -267,8 +312,7 @@ def getTrainLoaders(word2vec: Word2Vec, max_length: int) -> tuple[DataLoader, Da
         images = stack(images)
 
         return images, raw_captions
-
-
+    
     # Transformation that ResNet50 model expects
     resnet_transform = Compose([
                         Resize(256),
@@ -277,26 +321,17 @@ def getTrainLoaders(word2vec: Word2Vec, max_length: int) -> tuple[DataLoader, Da
                         Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                         ])
     
-    # Training CocoCaptions dataset
-    train_dataset = CocoCaptionDataset(root="coco/images",
-                          annFile="coco/annotations/captions_train2014.json",
-                          transform=resnet_transform,
-                          word2vec=word2vec,
-                          max_length=max_length)
-    
-    # Valdiation CocoCaptions dataset
-    val_dataset = ValCocoCaptionDataset(root="coco/images",
+
+    # FinalEvalCocoCaptions dataset
+    dataset = CocoCaptionDataset(root="coco/images",
                                         annFile="coco/annotations/captions_val2014.json",
                                         transform=resnet_transform,
                                         word2vec=word2vec,
                                         max_length=max_length)
     
+    dataloader = DataLoader(dataset, batch_size=4, collate_fn=final_eval_collate_fn, shuffle=True)
 
-    # DataLoaders for both training and validation sets
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=4, collate_fn=val_collate_fn, shuffle=True)
-    
-    return train_loader, val_loader
+    return dataloader
 
 
 def _getTokenizedCaptions(dataset: CocoCaptions) -> tuple[list[str], int]:
