@@ -1,44 +1,62 @@
 import torch
 
-from numpy import ndarray
 from torch import nn, tensor
+from torch.nn import functional as F
 from torchvision import models
+from typing import Union
 
 
-class ImageFeatureExtractor(nn.Module):
+class ImageEncoder(nn.Module):
     """
     
     Wrapper around pretrained ResNet50 model to extract features from images
 
     Attributes:
-        resnet (models.resnet50):   Pretrained ResNet50 model
+        extractor_spatial_dim (int):            Output spacial dimension of ResNet50 model
+        extractor_pixel_dim (int):              Output pixel dimensions of ResNet50 model
+        feature_extractor (models.resnet50):    Pretrained ResNet50 model
+        feature_reduction (nn.Sequential):      Linear layer with ReLU activation
     
     """
 
-    def __init__(self, embedding_dim: int) -> None:
+    def __init__(self, attention_dim: int) -> None:
         """
         
-        Constructor for ImageFeatureExtractor
+        Constructor for ImageEncoder
 
         
         Parameters:
-            embedding_dim (int):            The dimension of the embedding layer of LSTMNetwork
+            attention_dim (int):    The dimension of the attention layer of the decoder
         
         """
 
-        super(ImageFeatureExtractor, self).__init__()
+        super(ImageEncoder, self).__init__()
+
+        # Output dimension of the ResNet50 model without the final
+        # pooling or fully connected layer
+        self.extractor_spatial_dim = 2048
+        self.extractor_pixel_dim = 7 * 7
 
         # Initialize ResNet50 model with default weights
-        self.resnet = models.resnet50(weights='DEFAULT')
+        resnet_model = models.resnet50(weights='DEFAULT')
+        
+        # Remove fully connected layer and pooling layer
+        modules = list(resnet_model.children())[:-2]
 
-        # Replace fully connected layer to reshape features to embedding dimension
-        self.resnet.fc = nn.Linear(self.resnet.fc.in_features, embedding_dim)
+        # Create feature extraction model using remaining modules or ResNet50 model
+        self.feature_extractor = nn.Sequential(*modules)
+
+        # Create linear layer to reduce spacial dimension of image to `attention_dim`
+        self.feature_reduction = nn.Sequential(
+            nn.Linear(self.extractor_spatial_dim, attention_dim),
+            nn.ReLU(inplace=True)
+        )
 
 
     def forward(self, images: tensor) -> tensor:
         """
         
-        Handles the forward pass for ImageFeatureExtractor
+        Handles the forward pass for ImageEncoder
 
         
         Parameters:
@@ -50,69 +68,147 @@ class ImageFeatureExtractor(nn.Module):
 
         """
 
-        return self.resnet(images)
+        # Extract features from images using pretrained model
+        with torch.no_grad():
+            features = self.feature_extractor(images)
+
+        # Reshape features to shape required be reduction layer
+        reshaped_features = features.view(features.size(0), self.extractor_pixel_dim, self.extractor_spatial_dim)
+
+        return self.feature_reduction(reshaped_features)
     
 
-class LSTMNetwork(nn.Module):
-    """
-    
-    Custom LSTM network to decode image features into generated tokens for captioning
 
-    Attributes:
-        embedding (nn.Embedding):   Pretrained embedding layer using Word2Vec embeddings
-        lstm (nn.LSTM):             LSTM layer to handle input sequence
-        linear (nn.Linear):         Linear layer to handle outputting token scores
+class LuongAttention(nn.Module):
+    """
+    
+    Implementation of Luong Attention layer based on description in TensorFlow docs
     
     """
-    def __init__(self, embedding_dim: int, hidden_size: int, embedding_matrix: ndarray) -> None:
+    def __init__(self) -> None:
         """
         
-        Constructor for LSTMNetwork
+        Constructor for LuongAttention
+        
+        """
+
+        super(LuongAttention, self).__init__()
+
+
+    def forward(self, query: tensor, value: tensor, key:Union[tensor, None] = None) -> tensor:
+        """
+        
+        Handles the forward pass for LuongAttention layer
 
         
         Parameters:
-            embedding_dim (int):            The dimension of the embedding layer of LSTMNetwork
-            hidden_size (int):              The number of features in the hidden layer of LSTM
-            embedding_matrix (ndarray):     Matrix representing Word2Vec embeddings of tokens in dataset
-        
-        """
-        super(LSTMNetwork, self).__init__()
-
-        # Initialize embedding layer from pretrained word2vec model
-        self.embedding = nn.Embedding.from_pretrained(torch.FloatTensor(embedding_matrix), freeze=True)
-        self.lstm = nn.LSTM(embedding_dim, hidden_size, batch_first=True)
-        self.linear = nn.Linear(hidden_size, len(embedding_matrix))
-
-
-    def forward(self, features: tensor, captions: tensor) -> tensor:
-        """
-        
-        Handles the forward pass for LSTMNetwork
-
-        
-        Parameters:
-            features (tensor):      Batch of tensors containing feature representation of images
-            captions (tensor):      Batch of tensors containing token indices for each caption
+            query (tensor):             Batch of tensors representing current decoder hidden state
+            value (tensor):             Batch of tensors representing encoder output
+            key Union[tensor, None]:    Batch of tensors representing encoder output
 
         
         Returns:
-            tensor:     A tensor representing the scores generated by the model
+            tensor:     A tensor representing the context vector from the attention layer
+
+        """
+        # Set key tensor to be value tensor if no key is passed in
+        if key is None:
+            key = value
+
+        # Compute the softmax distribution of Dot-Product between queries and keys
+        softmax_distribution = F.softmax(torch.bmm(query, key.transpose(1, 2)), dim=-1)
+
+        # Compute linear combination between softmax distribution and value
+        return torch.bmm(softmax_distribution, value)
+
+        
+
+class CaptionDecoder(nn.Module):
+    """
+    
+    Decoder model to generate tokens from image features and captions
+
+    Attributes:
+        embedding (nn.Module):          Embedding layer to convert inputs into embeddings
+        gru (nn.Module):                GRU layer to process embeddings into hidden state
+        attention (nn.Module):          Attention layer to compute context vector
+        layer_norm (nn.Module):         Layer norm to normalize the inputs across features
+        decoder_linear (nn.Module):     Linear layer to transform features into scores
+    
+    """
+    def __init__(self, vocab_size: int, attention_dim: int, padding_idx: int) -> None:
+        """
+        
+        Constructor for CaptionDecoder
+
+        
+        Parameters:
+            vocab_size (int):       Integer representing the vocabulary size
+            attention_dim (int):    Integer representing attention dimension
+            padding_idx (int):      Index for padding token
+        
+        """
+
+        super(CaptionDecoder, self).__init__()
+
+        # Initialize an embedding layer
+        self.embedding = nn.Embedding(vocab_size, attention_dim, padding_idx=padding_idx)
+
+        # Initialize the gru layer for sequences
+        self.gru = nn.GRU(attention_dim, attention_dim, batch_first=True)
+
+        # Initialize custom LuongAttention layer and layer normalization
+        self.attention = LuongAttention()
+        self.layer_norm = nn.LayerNorm(attention_dim)
+
+        # Initialize linear layer to decode previous steps into vocabulary shape
+        self.decoder_linear = nn.Linear(attention_dim, vocab_size)
+
+
+    def forward(self, captions: tensor, encoder_output: tensor, prev_gru_state: Union[tensor, None]) -> tuple[tensor, tensor]:
+        """
+        
+        Handles the forward pass for CaptionDecoder
+
+        
+        Parameters:
+            captions (tensor):                      Batch of tensors representing the input captions
+            encoder_output (tensor):                Batch of tensors representing the output of the encoder model
+            prev_gru_state (Union[tensor, None]):   Tensor representing GRU state of previous time step
+
+        
+        Returns:
+            tensor:     A tensor representing the scores for each token
+            tensor:     A tensor representing the hidden state of the GRU layer
 
         """
 
-        # Create embedding tensor from caption tokens
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # Set hidden state for gru if none is given
+        if prev_gru_state is None:
+            prev_gru_state = torch.zeros(1, encoder_output.size(0), encoder_output.size(-1)).to(device)
+
+        # Generate embeddings from input captions
         embeddings = self.embedding(captions)
 
-        # Reshape image features and concatenate image features with embeddings
-        features = features.unsqueeze(1)
-        inputs = torch.cat((features, embeddings), 1)
+        # Generate features and hidden state for captions
+        gru_output, gru_state = self.gru(embeddings, prev_gru_state)
 
-        # Pass embeddings and features into lstm layer then linear layer for token scores
-        output, _ = self.lstm(inputs)
-        output = self.linear(output)
+        # Derive context vector from attention layer
+        context_vector = self.attention(gru_output, encoder_output)
 
-        return output
-    
+        # Add output and context vector
+        addition = gru_output + context_vector
+
+        # Normalize features
+        layer_norm = self.layer_norm(addition)
+
+        # Generate output scores over size of vocabulary
+        decoder_output = self.decoder_linear(layer_norm)
+
+        return decoder_output, gru_state
+
 
 class ImageCaptioningNetwork(nn.Module):
     """
@@ -121,32 +217,31 @@ class ImageCaptioningNetwork(nn.Module):
     generate captions using extracted features
 
     Attributes:
-        feature_extractor (ImageFeatureExtractor):  ResNet50 model to extract features from images
-        lstm_network (LSTMNetwork):                 LSTM network used to generate captions using image features
+        encoder (ImageEncoder):     ResNet50 model to extract features from images
+        decoder (CaptionDecoder):   GRU network used to generate captions using image features
     
     """
-    def __init__(self, embedding_dim: int, hidden_size: int, embedding_matrix: ndarray) -> None:
+    def __init__(self, vocab_size: int, attention_dim: int, padding_idx: int) -> None:
         """
         
         Constructor for ImageCaptioningNetwork
 
         
         Parameters:
-            embedding_dim (int):            The dimension of the embedding layer of LSTMNetwork
-            hidden_size (int):              The number of features in the hidden layer of LSTM
-            embedding_matrix (ndarray):     Matrix representing Word2Vec embeddings of tokens in dataset
-        
+            vocab_size (int):       Integer representing the vocabulary size
+            attention_dim (int):    Integer representing attention dimension
+            padding_idx (int):      Index for padding token
+
         """
+
         super(ImageCaptioningNetwork, self).__init__()
 
-        # Feature extraction network
-        self.feature_extractor = ImageFeatureExtractor(embedding_dim)
+        # Initialize encoder and decoder for caption generation pipeline
+        self.encoder = ImageEncoder(attention_dim)
+        self.decoder = CaptionDecoder(vocab_size, attention_dim, padding_idx)
 
-        # Caption generation network
-        self.lstm_network = LSTMNetwork(embedding_dim, hidden_size, embedding_matrix)
 
-    
-    def forward(self, images: tensor, captions: tensor) -> tensor:
+    def forward(self, images: tensor, captions: tensor, prev_gru_state: Union[tensor, None] = None) -> tensor:
         """
         
         Handles the forward pass for ImageCaptioningNetwork
@@ -154,7 +249,8 @@ class ImageCaptioningNetwork(nn.Module):
         
         Parameters:
             images (tensor):    Batch of tensors containing image representations
-            captions (tensor):  Batch of tensors containing caption embeddings
+            captions (tensor):  Batch of tensors containing captions
+            prev_gru_state (Union[tensor, None]):   Tensor representing GRU state of previous time step
 
         
         Returns:
@@ -162,24 +258,21 @@ class ImageCaptioningNetwork(nn.Module):
 
         """
 
-        # Generate features from pretrained network
-        with torch.no_grad():
-            features = self.feature_extractor(images)
+        encoder_output = self.encoder(images)
+        decoder_output = self.decoder(captions, encoder_output, prev_gru_state)
 
-        # Generate caption scores from images and captions
-        output = self.lstm_network(features, captions)
-
-        return output
+        return decoder_output
     
 
-def loadModel(embedding_matrix: ndarray, trained_model_path: str = None) -> ImageCaptioningNetwork:
+def loadModel(vocab_size: int, padding_idx: int, trained_model_path: str = None) -> ImageCaptioningNetwork:
     """
     
     Load a saved model's state dict if one is passed, otherwise load base model
 
 
     Parameters:
-        embedding_matrix (ndarray): Matrix consiting ov Word2Vec embeddings for tokens in dictionary
+        vocab_size (int):           Size of input vocabulary
+        padding_idx (int):          Index for padding token
         trained_model_path (str):   Path to pretrained model
 
     
@@ -189,9 +282,9 @@ def loadModel(embedding_matrix: ndarray, trained_model_path: str = None) -> Imag
     """
 
     # Initialize the base image captioning model
-    model = ImageCaptioningNetwork(embedding_dim=embedding_matrix.shape[1],
-                                       hidden_size=256,
-                                       embedding_matrix=embedding_matrix)
+    model = ImageCaptioningNetwork(vocab_size=vocab_size,
+                                   attention_dim=512,
+                                   padding_idx=padding_idx)
     
     # Load state dict of pretrained model if it is passed in
     if trained_model_path:
