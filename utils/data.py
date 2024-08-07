@@ -373,37 +373,7 @@ def _getTokenizedCaptions(dataset: CocoCaptions) -> tuple[list[str], int]:
     return tokenized_captions, max_length
 
 
-def _trainWord2Vec(tokenized_captions: list[str]) -> tuple[Word2Vec, np.ndarray]:
-    """
-
-    Trains the Word2Vec model using tokenized captions
-    
-
-    Parameters:
-        tokenized_captions (list[str]): A list of tokenized captions
-
-    
-    Returns:
-        Word2Vec:   The trained Word2Vec model
-        ndarray:    A matrix containing all Word2Vec embedding layers
-
-    """
-
-    # Train Word2Vec model using tokenized captions 
-    word2vec = Word2Vec(tokenized_captions, min_count=2, seed=47)
-
-    # Initialize an embedding matrix
-    embedding_matrix = np.zeros((len(word2vec.wv), word2vec.vector_size))
-
-    # Add word embedding vectors to embedding matrix
-    for word, idx in word2vec.wv.key_to_index.items():
-        embedding_vector = word2vec.wv[word]
-        embedding_matrix[idx] = embedding_vector
-
-    return word2vec, embedding_matrix
-
-
-def getWord2VecEmbeddings() -> tuple[Word2Vec, np.ndarray, int]:
+def getWord2VecEmbeddings() -> tuple[Word2Vec, int]:
     """
 
     Trains a Word2Vec model for word embeddings using the captions
@@ -412,7 +382,6 @@ def getWord2VecEmbeddings() -> tuple[Word2Vec, np.ndarray, int]:
     
     Returns:
         Word2Vec:   The trained Word2Vec model
-        ndarray:    A matrix containing all Word2Vec embedding layers
         int:        The length of the longest caption found in the dataset 
 
     """
@@ -435,7 +404,7 @@ def getWord2VecEmbeddings() -> tuple[Word2Vec, np.ndarray, int]:
     max_length = max(train_longest_caption, val_longest_caption)
 
     # Train Word2Vec model using tokenized captions 
-    word2vec, embedding_matrix = _trainWord2Vec(tokenized_captions)
+    word2vec = Word2Vec(tokenized_captions, min_count=2, seed=47)
     
     # Add 2 to max_length to account for start and end tokens
-    return word2vec, embedding_matrix, max_length + 2
+    return word2vec, max_length + 2
