@@ -5,6 +5,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from utils.data import getGPT2Tokenizer
 from utils.evaluate import evaluateEpoch
 from utils.models import ImageCaptioningNetwork
 
@@ -28,7 +29,7 @@ def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: Da
 
     """
     # Initialize loss function
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(reduction='none')
 
     # Set model to training mode and initialize loss
     model.train()
@@ -65,7 +66,7 @@ def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: Da
     return running_loss / len(train_loader)
 
 
-def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_loader: DataLoader, device: device, pad_idx: int, num_epochs:int=5) -> None:
+def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_loader: DataLoader, device: device, num_epochs:int=5) -> None:
     """
     
     Runs full training loop of model for given amount of epochs
@@ -76,12 +77,13 @@ def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_load
         train_loader (DataLoader):          DataLoader contining training data to train model on
         val_loader (DataLoader):            DataLoader contining validation data to evaluate model on
         device (device):                    Device to copy data to while training
-        pad_idx (int):                      ID representing padding token
     
     """
 
     # Initialize optimizer for updating model parameters
-    optimizer = AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
+    optimizer = AdamW(model.parameters(), lr=1e-4)
+
+    pad_idx = getGPT2Tokenizer().pad_token_id
 
     # Run for set number of epochs
     for epoch in range(num_epochs):
