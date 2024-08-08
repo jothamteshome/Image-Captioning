@@ -4,7 +4,8 @@ from PIL import Image
 from torch import tensor
 from torchvision import transforms
 
-from utils.data import getWord2VecEmbeddings
+from utils.data import getGPT2Tokenizer
+from utils.evaluate import generateCaption
 from utils.models import loadModel
 
 def processImage(image_path: str) -> tensor:
@@ -39,39 +40,32 @@ def processImage(image_path: str) -> tensor:
     return processed_image
 
 
-def generateCaption(img_path: str) -> str:
+def captionImage(img_path: str, trained_model_path: str) -> str:
+    """
+    
+    Captions an image given an filepath to an image and a trained model
+
+
+    Parameters:
+        img_path (str):             Path to an image to generate caption for
+        trained_model_path (str):   Path to trained model used to generate caption
+
+
+    Returns:
+        str:    Caption for the image that was passed in
+    
+    """
+    
+    # Initialize the device, tokenizer, and model to use for captioning
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    word2vec, max_length = getWord2VecEmbeddings()
+    tokenizer = getGPT2Tokenizer()
+    model = loadModel(trained_model_path).to(device)
 
-    start_idx, pad_idx, end_idx = word2vec.wv.key_to_index.get('<start>'), \
-        word2vec.wv.key_to_index.get('<pad>'), \
-        word2vec.wv.key_to_index.get('<end>')
-
-    model = loadModel(len(word2vec.wv), pad_idx).to(device)
-
-    generated_caption = [start_idx]
-    hidden_state = None
-
+    # Process the image and load to device memory
     img = processImage(img_path).to(device)
 
-    for _ in range(max_length):
-        curr_token = torch.tensor([generated_caption[-1]]).unsqueeze(0).to(device)
+    # Generate and print a caption
+    caption = generateCaption(model, img, tokenizer, device)
+    print(caption)
 
-
-        with torch.no_grad():
-            decoder_output, hidden_state = model(img, curr_token, hidden_state)
-        
-        next_token = torch.argmax(torch.nn.functional.softmax(decoder_output, dim=-1), dim=-1).item()
-
-        generated_caption.append(next_token)
-
-        if next_token == end_idx:
-            break
-    
-    # Decode generated tokens and join them into a single string element
-    decoded_caption = [word2vec.wv.index_to_key[token] for token in generated_caption]
-    decoded_caption = " ".join(decoded_caption)
-
-    print(decoded_caption)
-    
-    return decoded_caption
+    return caption
