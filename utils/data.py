@@ -1,14 +1,10 @@
-import nltk
-
-from gensim.models import Word2Vec
 from PIL import Image
 from torch import tensor, stack
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import CocoCaptions
 from torchvision.transforms import Compose, CenterCrop, Normalize, Resize, ToTensor
 from transformers import GPT2TokenizerFast
-
-nltk.download('punkt')
+from typing import List, Tuple
 
 
 class CocoCaptionDataset(Dataset):
@@ -164,16 +160,13 @@ class FinalEvalCocoCaptionDataset(CocoCaptionDataset):
 
     Attributes:
         coco (CocoCaptions):                        CocoCaptions dataset from torchvision
-        word2vec (Word2Vec):                        The trained Word2Vec model
-        max_length (int):                           Length of the largest caption in dataset
         transform (Compose):                        List of transforms to apply to an image
         root (str):                                 Path to root directory images are stored in
-        examples (list[dict[str, int|list]]):       List containing image-caption pairs
+        examples (List[Dict[str, int|List]]):       List containing image-caption pairs
 
     """
 
-    def __init__(self, root: str, annFile: str, transform: Compose, 
-                 word2vec: Word2Vec, max_length: int) -> None:
+    def __init__(self, root: str, annFile: str, transform: Compose) -> None:
         """
         
         Constructor for FinalEvalCocoCaptionDataset
@@ -183,17 +176,12 @@ class FinalEvalCocoCaptionDataset(CocoCaptionDataset):
             root (str):                     Path to root directory images are stored in
             annFile (str):                  Path to annotation file describing images
             transform (Compose):            List of transforms to apply to an image
-            word2vec (Word2Vec):            The trained Word2Vec model
-            max_length (int):               Length of the largest caption in dataset
         
         """
         super(CocoCaptionDataset, self).__init__()
 
         # Load CocoCaptions Dataset from torchvision
         self.coco = CocoCaptions(root=root, annFile=annFile, transform=transform)
-
-        self.word2vec = word2vec
-        self.max_length = max_length
         self.transform = transform
         self.root = root
         self.examples = []
@@ -212,7 +200,7 @@ class FinalEvalCocoCaptionDataset(CocoCaptionDataset):
             self.examples.append({'img_id': img_id, 'raw_captions': tuple(raw_captions)})
 
 
-    def __getitem__(self, id: int) -> tuple[tensor, tuple[str]]:
+    def __getitem__(self, id: int) -> tuple[tensor, Tuple[str]]:
         """
         
         Gets the item located at the current id
@@ -224,7 +212,7 @@ class FinalEvalCocoCaptionDataset(CocoCaptionDataset):
 
         Returns:
             tensor:     Tensor containing processed image
-            tuple[str]: Tuple containing raw caption strings
+            Tuple[str]: Tuple containing raw caption strings
         
         """
         img_id, raw_captions = self.examples[id].values()
@@ -278,33 +266,28 @@ def getTrainLoaders() -> tuple[DataLoader, DataLoader]:
     return train_loader, val_loader
 
 
-def getFinalEvalLoader(word2vec: Word2Vec, max_length: int) -> DataLoader:
+def getFinalEvalLoader() -> DataLoader:
     """
     
     Loads the final evaluation dataset
-
-    
-    Parameters:
-        word2vec (Word2Vec):    The trained Word2Vec model
-        max_length (int):       Length of the longest caption in the dataset
 
 
     Returns:
         DataLoader: DataLoader for final evaluation dataset
     
     """
-    def final_eval_collate_fn(batch):
+    def final_eval_collate_fn(batch: List[Tuple[tensor, Tuple[str]]]) -> Tuple[tensor, Tuple[str]]:
         """
         
         Handles the collation for a batch of data in the validation DataLoader
 
         Parameters:
-            batch: A batch of data to be collated
+            batch (List[Tuple[tensor, Tuple[str]]]): A batch of data to be collated
         
             
         Returns:
             tensor:             A tensor containing a batch of images
-            tuple[tuple[str]]:  A tuple of tuples of strings containing raw captions
+            Tuple[Tuple[str]]:  A tuple of tuples of strings containing raw captions
 
         """
         images, raw_captions = zip(*batch)
@@ -323,92 +306,13 @@ def getFinalEvalLoader(word2vec: Word2Vec, max_length: int) -> DataLoader:
     
 
     # FinalEvalCocoCaptions dataset
-    dataset = CocoCaptionDataset(root="coco/images",
-                                        annFile="coco/annotations/captions_val2014.json",
-                                        transform=resnet_transform,
-                                        word2vec=word2vec,
-                                        max_length=max_length)
+    dataset = FinalEvalCocoCaptionDataset(root="coco/images",
+                                          annFile="coco/annotations/captions_val2014.json",
+                                          transform=resnet_transform)
     
-    dataloader = DataLoader(dataset, batch_size=4, collate_fn=final_eval_collate_fn, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=1, collate_fn=final_eval_collate_fn, shuffle=True)
 
     return dataloader
-
-
-def _getTokenizedCaptions(dataset: CocoCaptions) -> tuple[list[str], int]:
-    """
-    
-    Loops through dataset and returns list of tokenized captions
-
-    
-    Parameters:
-        dataset (CocoCaptions): CocoCaptions dataset to extract captions from
-
-    
-    Returns:
-        list[str]:  List of tokenized captions from dataset
-        int:        Length of the longest caption in the dataset
-
-    """
-
-    tokenized_captions = []
-    max_length = 0
-
-    # Loop through dataset
-    for id in range(len(dataset)):
-        img_id = dataset.ids[id]
-        annotations = dataset.coco.imgToAnns[img_id]
-
-        # Loop though all annotations associated with current image id
-        for annotation in annotations:
-            # Convert caption to lower case then tokenize
-            tokenized_caption = nltk.word_tokenize(annotation['caption'].lower())
-
-            # Determine longest caption length available in dataset
-            if len(tokenized_caption) > max_length:
-                max_length = len(tokenized_caption)
-
-            # Append tokenized caption
-            tokenized_captions.append(tokenized_caption)
-
-    return tokenized_captions, max_length
-
-
-def getWord2VecEmbeddings() -> tuple[Word2Vec, int]:
-    """
-
-    Trains a Word2Vec model for word embeddings using the captions
-    found in the training/validation data
-
-    
-    Returns:
-        Word2Vec:   The trained Word2Vec model
-        int:        The length of the longest caption found in the dataset 
-
-    """
-
-    # Load training dataset from torchvision
-    train_data = CocoCaptions(root="coco/images", annFile="coco/annotations/captions_train2014.json")
-    
-    # Load validation dataset from torchvision
-    val_data = CocoCaptions(root="coco/images", annFile="coco/annotations/captions_val2014.json")
-    
-    # Get tokenized_captions from train_dataset and val_dataset
-    train_tokens, train_longest_caption  = _getTokenizedCaptions(train_data)
-    val_tokens, val_longest_caption = _getTokenizedCaptions(val_data)
-
-    # Add tokenized captions and special tokens
-    tokenized_captions = train_tokens + val_tokens + \
-        [["<pad>"] * 5] + [["<unk>"] * 5] + [["<start>"] * 5] + [["<end>"] * 5]
-    
-    # Determine max caption length in dataset
-    max_length = max(train_longest_caption, val_longest_caption)
-
-    # Train Word2Vec model using tokenized captions 
-    word2vec = Word2Vec(tokenized_captions, min_count=2, seed=47)
-    
-    # Add 2 to max_length to account for start and end tokens
-    return word2vec, max_length + 2        
-
 
 
 def getGPT2Tokenizer():
