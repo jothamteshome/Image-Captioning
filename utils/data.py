@@ -92,6 +92,10 @@ class CocoCaptionDataset(Dataset):
         path = self.coco.coco.loadImgs(img_id)[0]['file_name']
         image = Image.open(f"{self.root}\\{path}").convert('RGB')
 
+        # Apply transform to image
+        if self.transform:
+            image = self.transform(image)
+
         return image, encoded_caption
     
 
