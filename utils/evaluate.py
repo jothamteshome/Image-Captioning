@@ -113,3 +113,48 @@ def generateCaption(model: ImageCaptioningNetwork, image: tensor, tokenizer: GPT
 
 
     return tokenizer.decode(generated_caption)
+
+
+
+def BLEUEval(model: ImageCaptioningNetwork, dataloader: DataLoader, device: torch.device) -> float:
+    """
+    
+    Calculate the BLEU score for the generated captions
+
+    
+    Parameters:
+        model (ImageCaptioningNetwork):     Model to generate captions with
+        dataloader (DataLoader):            DataLoader containing images and raw captions to compare generated captions to
+        device (torch.device):              Device to load the data onto for caption generation
+
+        
+    Returns:
+        float:  Float representing the BLEU score for the model
+
+    """
+
+    # Set model to evaluation mode
+    model.eval()
+
+    # Initialize tokenizer
+    tokenizer = getGPT2Tokenizer()
+
+    # Initialize BLEU score metric
+    bleu_score = BLEUScore(n_gram=2)
+
+    with torch.no_grad():
+        # Evaluate all batches of dataloader
+        for images, reference_captions in tqdm(dataloader, unit='batch', desc='Computing BLEU score'):
+            # Move data to device
+            images = images.to(device)
+
+            # Generate caption
+            generated_caption = generateCaption(model, images, tokenizer, device)
+
+            # Update current BLEU score
+            bleu_score.update([generated_caption], reference_captions)
+
+    # Compute BLEU score
+    score = bleu_score.compute().item()
+
+    return score
