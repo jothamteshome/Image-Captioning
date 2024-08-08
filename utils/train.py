@@ -97,7 +97,7 @@ def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: Da
     return running_loss / len(train_loader)
 
 
-def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_loader: DataLoader, **kwargs:  dict[str, any]) -> None:
+def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_loader: DataLoader, train_args: TrainingArgs) -> None:
     """
     
     Runs full training loop of model for given amount of epochs
@@ -107,11 +107,9 @@ def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_load
         model (ImageCaptioningNetwork):     Model to train on dataset for one epoch
         train_loader (DataLoader):          DataLoader contining training data to train model on
         val_loader (DataLoader):            DataLoader contining validation data to evaluate model on
-        kwargs (dict[str, any]):            Dictionary containing keyword arguments
+        train_args (TrainingArgs):          Arguments to set during the training of the model
     
     """
-    # Get training arguments
-    train_args = kwargs.get('train_args')
 
     # Initialize optimizer for updating model parameters
     optimizer = AdamW(model.parameters(), lr=train_args.learning_rate, weight_decay=train_args.weight_decay)
