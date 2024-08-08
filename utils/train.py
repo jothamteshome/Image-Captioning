@@ -40,7 +40,7 @@ class TrainingArgs:
 
 
 
-def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: DataLoader, pad_idx: int, **kwargs: dict[str, any]) -> float:
+def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: DataLoader, device: device, pad_idx: int) -> float:
     """
     
     Handles training a model for a single epoch
@@ -50,17 +50,14 @@ def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: Da
         model (ImageCaptioningNetwork):     Model to train on dataset for one epoch
         optimizer (AdamW):                  Optimizer to adjust parameters during training
         train_loader (DataLoader):          DataLoader contining training data to train model on
+        device (device):                    Device to move data to while training
         pad_idx (int):                      ID representing padding token
-        kwargs (dict[str, any]):            Dictionary containing keyword arguments
 
         
     Returns:
         float:      A float value representing the evaluation loss at the current training step
 
     """
-
-    # Get training arguments
-    train_args = kwargs.get('train_args')
 
     # Initialize loss function
     criterion = nn.CrossEntropyLoss(reduction='none')
@@ -75,7 +72,7 @@ def trainEpoch(model: ImageCaptioningNetwork, optimizer: AdamW, train_loader: Da
         optimizer.zero_grad()
 
         # Move data to device
-        images, captions = images.to(train_args.device), captions.to(train_args.device)
+        images, captions = images.to(device), captions.to(device)
         inputs, targets = captions[:, :-1], captions[:, 1:]
 
         # Compute model_predictions
@@ -126,7 +123,7 @@ def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_load
     for epoch in range(train_args.num_epochs):
 
         # Train model for current epoch and get training loss
-        train_loss = trainEpoch(model, optimizer, train_loader, pad_idx, train_args=train_args)
+        train_loss = trainEpoch(model, optimizer, train_loader, train_args.device, pad_idx)
 
         # Save checkpoint after epoch
 
@@ -134,7 +131,7 @@ def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_load
             torch.save(model.state_dict(), f"saved_models/{train_args.save_dir}/{train_args.checkpoint_dir}/epoch-{epoch+1}.pt")
 
         # Evaluate model for current epoch and get validation loss
-        val_loss = evaluateEpoch(model, val_loader, pad_idx, train_args=train_args)
+        val_loss = evaluateEpoch(model, val_loader, train_args.device, pad_idx)
 
         # Print current epoch and loss metrics for training and testing
         print(f"Epoch {epoch+1} | train_loss: {train_loss} | val_loss: {val_loss}")
