@@ -1,9 +1,8 @@
 import nltk
-import numpy as np
 
 from gensim.models import Word2Vec
 from PIL import Image
-from torch import tensor, vstack, stack
+from torch import tensor, stack
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import CocoCaptions
 from torchvision.transforms import Compose, CenterCrop, Normalize, Resize, ToTensor
