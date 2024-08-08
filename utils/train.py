@@ -33,8 +33,7 @@ class TrainingArgs:
         self.model_title = "image_captioning_network"
         self.num_epochs = 5
         self.weight_decay = 0
-        self.save_dir = f"{self.model_title}__lr={self.learning_rate:.2E},epochs=\
-            {self.num_epochs},decay={self.weight_decay}"
+        self.save_dir = f"{self.model_title}__lr={self.learning_rate:.2E},epochs={self.num_epochs},decay={self.weight_decay}"
 
         os.makedirs(f"saved_models/{self.save_dir}/{self.checkpoint_dir}", exist_ok=True)
 
