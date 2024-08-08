@@ -1,6 +1,5 @@
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu124
 gensim
-ninja
 nltk
 numpy<2
 pillow
