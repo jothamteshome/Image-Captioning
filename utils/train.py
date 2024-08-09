@@ -27,13 +27,13 @@ class TrainingArgs:
         save_dir (str):         Name of the directory to save the model in
     
     """
-    def __init__(self, override:bool=False) -> None:
-        self.checkpoint_dir = "checkpoints"
+    def __init__(self, override:bool=False, **kwargs) -> None:
+        self.checkpoint_dir = kwargs.get('checkpoint_dir', "checkpoints")
         self.device = device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.learning_rate = 1e-3
-        self.model_title = "image_captioning_network"
-        self.num_epochs = 5
-        self.weight_decay = 0
+        self.learning_rate = kwargs.get('learning_rate', 1e-3)
+        self.model_title = kwargs.get('model_title', "image_captioning_network")
+        self.num_epochs = kwargs.get('num_epochs', 5)
+        self.weight_decay = kwargs.get('weight_decay', 0)
         self.save_dir = f"{self.model_title}__lr={self.learning_rate:.2E},epochs={self.num_epochs},decay={self.weight_decay}"
         self.metrics_json = f"saved_models/{self.save_dir}/eval_metrics.json"
 
@@ -44,6 +44,7 @@ class TrainingArgs:
             if not override:
                 raise OSError("This model already exists. Call with `override=True` set to override existing results")
 
+        # Create initial json in metrics file
         with open(self.metrics_json, 'w') as f:
             json.dump({'checkpoints': {}, 'final_model': {}}, f)
 
