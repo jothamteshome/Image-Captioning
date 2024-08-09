@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 
 from torch import device, nn
@@ -26,7 +27,7 @@ class TrainingArgs:
         save_dir (str):         Name of the directory to save the model in
     
     """
-    def __init__(self):
+    def __init__(self, override:bool=False) -> None:
         self.checkpoint_dir = "checkpoints"
         self.device = device('cuda' if torch.cuda.is_available() else 'cpu')
         self.learning_rate = 1e-3
@@ -34,8 +35,52 @@ class TrainingArgs:
         self.num_epochs = 5
         self.weight_decay = 0
         self.save_dir = f"{self.model_title}__lr={self.learning_rate:.2E},epochs={self.num_epochs},decay={self.weight_decay}"
+        self.metrics_json = f"saved_models/{self.save_dir}/eval_metrics.json"
 
-        os.makedirs(f"saved_models/{self.save_dir}/{self.checkpoint_dir}", exist_ok=True)
+        # Raise error if model being trained already exists and override is set to False
+        try:
+            os.makedirs(f"saved_models/{self.save_dir}/{self.checkpoint_dir}")
+        except OSError:
+            if not override:
+                raise OSError("This model already exists. Call with `override=True` set to override existing results")
+
+        with open(self.metrics_json, 'w') as f:
+            json.dump({'checkpoints': {}, 'final_model': {}}, f)
+
+
+    def saveMetrics(self, metrics: dict, epoch:int|None=None) -> None:
+        """
+        
+        Function to save evaluation metrics at current time
+
+
+        Parameters:
+            metrics (dict):     Dictionary containing evaluation metrics
+            epoch (int|None):   Integer representing current epoch for checkpoint if not None
+
+        """
+
+        # Read metrics json file
+        with open(self.metrics_json, 'r') as f:
+            current_metrics = json.load(f)
+
+        # If saving a checkpoint
+        if epoch is not None:
+            # Initialize dictionary for checkpoint
+            current_metrics['checkpoints'][f'epoch-{epoch}'] = {}
+
+            # Create metric if it doesn't exist or update existing value
+            for metric in metrics:
+                current_metrics['checkpoints'][f'epoch-{epoch}'][metric] = metrics[metric]
+        else:
+            # Create metric if it doesn't exist or update existing value
+            for metric in metrics:
+                current_metrics['final_model'][metric] = metrics[metric]
+
+
+        # Save json back to file
+        with open(self.metrics_json, 'w') as f:
+            json.dump(current_metrics, f)
 
 
 
@@ -123,16 +168,19 @@ def trainModel(model: ImageCaptioningNetwork, train_loader: DataLoader, val_load
         train_loss = trainEpoch(model, optimizer, train_loader, train_args.device, pad_idx)
 
         # Save checkpoint after epoch
-
-        if epoch+1 < train_args.num_epochs:
-            torch.save(model.state_dict(), f"saved_models/{train_args.save_dir}/{train_args.checkpoint_dir}/epoch-{epoch+1}.pt")
+        torch.save(model.state_dict(), f"saved_models/{train_args.save_dir}/{train_args.checkpoint_dir}/epoch-{epoch+1}.pt")
 
         # Evaluate model for current epoch and get validation loss
         val_loss = evaluateEpoch(model, val_loader, train_args.device, pad_idx)
 
         # Print current epoch and loss metrics for training and testing
         print(f"Epoch {epoch+1} | train_loss: {train_loss} | val_loss: {val_loss}")
+        train_args.saveMetrics({'train_loss': train_loss, 'val_loss': val_loss}, epoch=epoch+1)
 
     
     # Save fully trained model
     torch.save(model.state_dict(), f"saved_models/{train_args.save_dir}/fully_trained_model.pt")
+    train_args.saveMetrics({'train_loss': train_loss, 'val_loss': val_loss})
+
+    # Delete checkpoint equivalent to final model
+    os.remove(f"saved_models/{train_args.save_dir}/{train_args.checkpoint_dir}/epoch-{train_args.num_epochs}.pt")
