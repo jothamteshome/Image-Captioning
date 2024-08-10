@@ -3,7 +3,7 @@ import torch
 from torch import nn, tensor
 from torch.nn import functional as F
 from torchvision import models
-from typing import Union
+from typing import Union, Tuple
 
 from utils.data import getGPT2Tokenizer
 
@@ -132,7 +132,7 @@ class CaptionDecoder(nn.Module):
 
     Attributes:
         embedding (nn.Module):          Embedding layer to convert inputs into embeddings
-        gru (nn.Module):                GRU layer to process embeddings into hidden state
+        LSTM (nn.Module):               LSTM layer to process embeddings into hidden state
         attention (nn.Module):          Attention layer to compute context vector
         layer_norm (nn.Module):         Layer norm to normalize the inputs across features
         decoder_linear (nn.Module):     Linear layer to transform features into scores
@@ -157,8 +157,8 @@ class CaptionDecoder(nn.Module):
         # Initialize an embedding layer
         self.embedding = nn.Embedding(len(tokenizer), attention_dim, padding_idx=tokenizer.pad_token_id)
 
-        # Initialize the gru layer for sequences
-        self.gru = nn.GRU(attention_dim, attention_dim, batch_first=True)
+        # Initialize the LSTM layer for sequences
+        self.lstm = nn.LSTM(attention_dim, attention_dim, batch_first=True)
 
         # Initialize custom LuongAttention layer and layer normalization
         self.attention = LuongAttention()
@@ -168,41 +168,42 @@ class CaptionDecoder(nn.Module):
         self.decoder_linear = nn.Linear(attention_dim, len(tokenizer))
 
 
-    def forward(self, captions: tensor, encoder_output: tensor, prev_gru_state: Union[tensor, None]) -> tuple[tensor, tensor]:
+    def forward(self, captions: tensor, encoder_output: tensor, prev_lstm_states: Tuple[Union[tensor, None], Union[tensor, None]] = (None, None)) -> tuple[tensor, tensor]:
         """
         
         Handles the forward pass for CaptionDecoder
 
         
         Parameters:
-            captions (tensor):                      Batch of tensors representing the input captions
-            encoder_output (tensor):                Batch of tensors representing the output of the encoder model
-            prev_gru_state (Union[tensor, None]):   Tensor representing GRU state of previous time step
+            captions (tensor):                                                  Batch of tensors representing the input captions
+            encoder_output (tensor):                                            Batch of tensors representing the output of the encoder model
+            prev_lstm_state (Tuple[Union[tensor, None], Union[tensor, None]):   Tensor representing LSTM state of previous time step
 
         
         Returns:
-            tensor:     A tensor representing the scores for each token
-            tensor:     A tensor representing the hidden state of the GRU layer
+            tensor:                     A tensor representing the scores for each token
+            Tuple[tensor, tensor]:      A tuple of tensors representing the hidden state and cell state of the LSTM layer
 
         """
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        # Set hidden state for gru if none is given
-        if prev_gru_state is None:
-            prev_gru_state = torch.zeros(1, encoder_output.size(0), encoder_output.size(-1)).to(device)
+        # Set hidden state and cell state for LSTM to zero if (None, None) is given
+        if prev_lstm_states == (None, None):
+            prev_lstm_states = (torch.zeros(1, encoder_output.size(0), encoder_output.size(-1)).to(device),
+                               torch.zeros(1, encoder_output.size(0), encoder_output.size(-1)).to(device))
 
         # Generate embeddings from input captions
         embeddings = self.embedding(captions)
 
         # Generate features and hidden state for captions
-        gru_output, gru_state = self.gru(embeddings, prev_gru_state)
+        lstm_output, lstm_states = self.lstm(embeddings, prev_lstm_states)
 
         # Derive context vector from attention layer
-        context_vector = self.attention(gru_output, encoder_output)
+        context_vector = self.attention(lstm_output, encoder_output)
 
         # Add output and context vector
-        addition = gru_output + context_vector
+        addition = lstm_output + context_vector
 
         # Normalize features
         layer_norm = self.layer_norm(addition)
@@ -210,7 +211,7 @@ class CaptionDecoder(nn.Module):
         # Generate output scores over size of vocabulary
         decoder_output = self.decoder_linear(layer_norm)
 
-        return decoder_output, gru_state
+        return decoder_output, lstm_states
 
 
 class ImageCaptioningNetwork(nn.Module):
@@ -221,7 +222,7 @@ class ImageCaptioningNetwork(nn.Module):
 
     Attributes:
         encoder (ImageEncoder):     ResNet50 model to extract features from images
-        decoder (CaptionDecoder):   GRU network used to generate captions using image features
+        decoder (CaptionDecoder):   LSTM network used to generate captions using image features
     
     """
     def __init__(self, attention_dim: int) -> None:
@@ -242,28 +243,28 @@ class ImageCaptioningNetwork(nn.Module):
         self.decoder = CaptionDecoder(attention_dim)
 
 
-    def forward(self, images: tensor, captions: tensor, prev_gru_state: Union[tensor, None] = None) -> tensor:
+    def forward(self, images: tensor, captions: tensor, prev_lstm_state: Tuple[Union[tensor, None], Union[tensor, None]] = (None, None)) -> Tuple[tensor, Tuple[tensor, tensor]]:
         """
         
         Handles the forward pass for ImageCaptioningNetwork
 
         
         Parameters:
-            images (tensor):    Batch of tensors containing image representations
-            captions (tensor):  Batch of tensors containing captions
-            prev_gru_state (Union[tensor, None]):   Tensor representing GRU state of previous time step
+            images (tensor):                            Batch of tensors containing image representations
+            captions (tensor):                          Batch of tensors containing captions
+            prev_lstm_state (Union[tensor, None]):      Tensor representing LSTM state of previous time step
 
         
         Returns:
-            tensor:     A tensor representing the scores generated by the model
-            tensor:     A tensor representing the hidden state of the GRU layer
+            tensor:                     A tensor representing the scores generated by the model
+            Tuple[tensor, tensor]:      A tuple of tensors representing the hidden state and cell state of the LSTM layer
 
         """
 
         encoder_output = self.encoder(images)
-        decoder_output, gru_state = self.decoder(captions, encoder_output, prev_gru_state)
+        decoder_output, lstm_state = self.decoder(captions, encoder_output, prev_lstm_state)
 
-        return decoder_output, gru_state
+        return decoder_output, lstm_state
     
 
 def loadModel(trained_model_path: str = None) -> ImageCaptioningNetwork:

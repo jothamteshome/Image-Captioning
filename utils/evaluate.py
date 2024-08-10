@@ -82,7 +82,7 @@ def generateCaption(model: ImageCaptioningNetwork, image: tensor, tokenizer: GPT
 
     # Initialize generated caption and initial hidden state of GRU layer
     generated_caption = [bos_id]
-    hidden_state = None
+    curr_state = (None, None)
 
     # Loop until 50 tokens are generated
     for _ in range(50):
@@ -92,7 +92,7 @@ def generateCaption(model: ImageCaptioningNetwork, image: tensor, tokenizer: GPT
 
         # Pass image, token, and previous hidden state to model
         with torch.no_grad():
-            decoder_output, hidden_state = model(image, curr_token, hidden_state)
+            decoder_output, curr_state = model(image, curr_token, curr_state)
 
         # Determine next token from output
         next_token = torch.argmax(torch.nn.functional.softmax(decoder_output, dim=-1), dim=-1).item()
